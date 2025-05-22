@@ -1,0 +1,34 @@
+img_size=32,
+    patch_size=4,
+    embed_dim=128,
+    depth=4,
+    num_heads=2,
+    mlp_ratio=2.0,
+    num_classes=10
+1. After training, model save as"/home/yanxia/Downloads/FQ_ViT_experiment/ best_custom_vit.pth"
+Early stopping at epoch 32
+Best Model | Val Loss: 1.2727 | Val Acc: 0.5386
+
+2. evaluate again with FQ_ViT without quant (I changed test_quant concerning dataset loading source etc.)
+(myenv) yanxia@catbus:~/Downloads/FQ_ViT_experiment$ python test_quant.py vit_custom > custom_vit_without_quant.txt
+
+result in file "/home/yanxia/Downloads/FQ_ViT_experiment/custom_vit_without_quant.txt"
+* Prec@1 53.860 Prec@5 94.440 Time 1.025
+
+3. with min-max quantization 
+python test_quant.py vit_custom --quant > custom_vit_minmax.txt
+ * Prec@1 53.690 Prec@5 94.360 Time 0.915
+ 
+ 4. with special quantization from FQ-ViT 
+ python test_quant.py vit_custom --quant --ptf --lis --quant-method minmax > custom_vit_FQ.txt
+  * Prec@1 53.160 Prec@5 94.280 Time 1.206
+  even worse than with simple quant-method, possibly because of simple model
+  
+  5. to investigate whether the model is fully quantized:
+  change to onnx model and to see the structure
+  Use Netron to inspect the ONNX structure, all are still in float32
+  
+ quantization is simulated at runtime rather than being converted into actual integer weights and activations in the model state dict.
+
+This approach is known as "fake quantization" or "quantization-aware training (QAT)" style simulation, which is what the MEGVII FQ-ViT codebase uses.
+

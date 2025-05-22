@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser(description='FQ-ViT')
 
 parser.add_argument('model',
                     choices=[
-                        'deit_tiny', 'deit_small', 'deit_base', 'vit_base',
+                        'vit_custom224','vit_custom32','deit_tiny', 'deit_small', 'deit_base', 'vit_base',
                         'vit_large', 'swin_tiny', 'swin_small', 'swin_base'
                     ],
                     help='model')
@@ -32,6 +32,7 @@ parser.add_argument('--calib-batchsize',
                     type=int,
                     help='batchsize of calibration set')
 parser.add_argument('--calib-iter', default=10, type=int)
+#parser.add_argument('--calib-iter', default=5, type=int) # 500 images for calibration
 parser.add_argument('--val-batchsize',
                     default=100,
                     type=int,
@@ -41,15 +42,21 @@ parser.add_argument('--num-workers',
                     type=int,
                     help='number of data loading workers (default: 16)')
 parser.add_argument('--device', default='cuda', type=str, help='device')
+
 parser.add_argument('--print-freq',
                     default=100,
                     type=int,
                     help='print frequency')
+## note: CIFAR10 has 10000 test images as validate dataset
+## val-batchsize=100, so there are 100 loads from dataloader
+## we can see 100/print-freq prints on the screen. 
 parser.add_argument('--seed', default=0, type=int, help='seed')
 
 
 def str2model(name):
     d = {
+        'vit_custom32':vit_custom_4_32,
+        'vit_custom224':vit_custom_16_224,
         'deit_tiny': deit_tiny_patch16_224,
         'deit_small': deit_small_patch16_224,
         'deit_base': deit_base_patch16_224,
@@ -88,10 +95,13 @@ def main():
     device = torch.device(args.device)
     cfg = Config(args.ptf, args.lis, args.quant_method)
     model = str2model(args.model)(pretrained=True, cfg=cfg)
+    #print(model)
     model = model.to(device)
+    
 
     # Note: Different models have different strategies of data preprocessing.
     model_type = args.model.split('_')[0]
+    #print(model_type)
     if model_type == 'deit':
         mean = (0.485, 0.456, 0.406)
         std = (0.229, 0.224, 0.225)
@@ -115,6 +125,8 @@ def main():
     valdir = os.path.join(args.data, 'val')
 
     val_dataset = datasets.ImageFolder(valdir, val_transform)
+    # val_dataset = datasets.CIFAR10(root='/home/yanxia/Downloads/20250505/data/', train=False, download=True, transform=val_transform)
+    
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=args.val_batchsize,
@@ -130,10 +142,11 @@ def main():
 
     if args.quant:
         train_dataset = datasets.ImageFolder(traindir, train_transform)
+        #train_dataset = datasets.CIFAR10(root='/home/yanxia/Downloads/20250505/data/', train=True, download=True, transform=train_transform)
         train_loader = torch.utils.data.DataLoader(
             train_dataset,
             batch_size=args.calib_batchsize,
-            shuffle=True,
+            shuffle=True,  ## batchsize=100, iteration=10, 1000 random train dataset images as calibration images
             num_workers=args.num_workers,
             pin_memory=True,
             drop_last=True,
@@ -157,6 +170,12 @@ def main():
                 output = model(image)
         model.model_close_calibrate()
         model.model_quant()
+        for name, module in model.named_modules():
+            if isinstance(module, QIntLayerNorm):
+                print(f"{name} is in mode: {module.mode}")
+        
+        # save quantized model
+        #torch.save(model.state_dict(), "best_custom_vit_quant.pth")
 
     print('Validating...')
     val_loss, val_prec1, val_prec5 = validate(args, val_loader, model,
@@ -247,6 +266,7 @@ def accuracy(output, target, topk=(1, )):
 
 
 def build_transform(input_size=224,
+                    #input_size=32,
                     interpolation='bicubic',
                     mean=(0.485, 0.456, 0.406),
                     std=(0.229, 0.224, 0.225),

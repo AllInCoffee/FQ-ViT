@@ -1,27 +1,20 @@
-# Copyright (c) MEGVII Inc. and its affiliates. All Rights Reserved.
-import collections.abc
-import math
-import os
-import re
-import warnings
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Mon May 19 09:41:44 2025
+
+@author: yanxia
+"""
+
+# Convert PyTorch model to ONNX format
+import torch
+import torch.onnx
+from torch import nn
+from models.layers_quant import DropPath, HybridEmbed, Mlp, PatchEmbed, trunc_normal_
+from models.ptq import QAct, QConv2d, QIntLayerNorm, QIntSoftmax, QLinear
 from collections import OrderedDict
 from functools import partial
-from itertools import repeat
-
-import torch
-import torch.nn.functional as F
-from torch import nn
-
-from .layers_quant import DropPath, HybridEmbed, Mlp, PatchEmbed, trunc_normal_
-from .ptq import QAct, QConv2d, QIntLayerNorm, QIntSoftmax, QLinear
-from .utils import load_weights_from_npz
-
-
-__all__ = [
-    'vit_custom_16_224','vit_custom_4_32','deit_tiny_patch16_224', 'deit_small_patch16_224', 'deit_base_patch16_224',
-    'vit_base_patch16_224', 'vit_large_patch16_224'
-]
-
+from config import Config
 
 class Attention(nn.Module):
 
@@ -114,8 +107,7 @@ class Attention(nn.Module):
         x = self.qact3(x)
         x = self.proj_drop(x)
         return x
-
-
+    
 class Block(nn.Module):
 
     def __init__(self,
@@ -189,8 +181,6 @@ class Block(nn.Module):
                     self.norm2(x, self.qact2.quantizer,
                                self.qact3.quantizer)))))
         return x
-
-
 class VisionTransformer(nn.Module):
     """Vision Transformer
     A PyTorch impl of : `An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale`  -
@@ -356,7 +346,6 @@ class VisionTransformer(nn.Module):
         for m in self.modules():
             if type(m) in [QConv2d, QLinear, QAct, QIntSoftmax]:
                 m.quant = True
-                #m.quant = False  # only quantize LayerNorm 84.388
             if self.cfg.INT_NORM:
                 if type(m) in [QIntLayerNorm]:
                     m.mode = 'int'
@@ -415,187 +404,44 @@ class VisionTransformer(nn.Module):
         x = self.act_out(x)
         return x
 
-###################
-def vit_custom_16_224(pretrained=False,
-                         quant=False,
-                         calibrate=False,
-                         cfg=None,
-                         **kwargs):
-    model = VisionTransformer(patch_size=16,
-                              embed_dim=768,
-                              depth=1,
-                              num_heads=12,
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(QIntLayerNorm, eps=1e-6),
-                              quant=quant,
-                              calibrate=calibrate,
-                              input_quant=False,
-                              cfg=cfg,
-                              **kwargs)
-    if pretrained:
-        model.load_state_dict(torch.load("/home/yanxia/Downloads/FQ_ViT_experiment/best_custom_vit_16_224.pth"))
-    return model
 
-def vit_custom_4_32(pretrained=False,
-                         quant=False,
-                         calibrate=False,
-                         cfg=None,
-                         **kwargs):
-    model = VisionTransformer(
-            img_size=32,
-            patch_size=4,
-            num_classes=10,
-            #embed_dim=128,
-            embed_dim=192,
-            
-            depth=6,
-            
-            num_heads=2,
-            mlp_ratio=2,
-            qkv_bias=True,
-            norm_layer=partial(QIntLayerNorm, eps=1e-6),
-            quant=quant,
-            calibrate=calibrate,
-            input_quant=False,
-            cfg= cfg,
-            **kwargs)
-    
-    if pretrained:
-        #model.load_state_dict(torch.load("/home/yanxia/Downloads/FQ_ViT_experiment/best_custom_vit.pth"))
-        model.load_state_dict(torch.load("/home/yanxia/Downloads/FQ_ViT_experiment/best_custom_vit_6layers.pth"))
-    return model
-
-####################
-def deit_tiny_patch16_224(pretrained=False,
-                          quant=False,
-                          calibrate=False,
-                          cfg=None,
-                          **kwargs):
-    model = VisionTransformer(
-        patch_size=16,
-        embed_dim=192,
-        depth=12,
-        num_heads=3,
-        mlp_ratio=4,
+model_fp32 = VisionTransformer(
+        img_size=32,
+        patch_size=4,
+        num_classes=10,
+        embed_dim=128,
+        depth=1,
+        num_heads=2,
+        mlp_ratio=2,
         qkv_bias=True,
         norm_layer=partial(QIntLayerNorm, eps=1e-6),
-        quant=quant,
-        calibrate=calibrate,
-        input_quant=True,
-        cfg=cfg,
-        **kwargs,
+        quant=False,
+        calibrate=False,
+        input_quant=False,
+        cfg= Config( ptf=False, lis=False)
     )
-    if pretrained:
-        checkpoint = torch.hub.load_state_dict_from_url(
-            url=
-            'https://dl.fbaipublicfiles.com/deit/deit_tiny_patch16_224-a1311bcf.pth',
-            map_location='cpu',
-            check_hash=True,
-        )
-        model.load_state_dict(checkpoint['model'], strict=False)
-    return model
 
 
-def deit_small_patch16_224(pretrained=False,
-                           quant=False,
-                           calibrate=False,
-                           cfg=None,
-                           **kwargs):
-    model = VisionTransformer(patch_size=16,
-                              embed_dim=384,
-                              depth=12,
-                              num_heads=6,
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(QIntLayerNorm, eps=1e-6),
-                              quant=quant,
-                              calibrate=calibrate,
-                              input_quant=True,
-                              cfg=cfg,
-                              **kwargs)
-    if pretrained:
-        checkpoint = torch.hub.load_state_dict_from_url(
-            url=
-            'https://dl.fbaipublicfiles.com/deit/deit_small_patch16_224-cd65a155.pth',
-            map_location='cpu',
-            check_hash=True)
-        model.load_state_dict(checkpoint['model'], strict=False)
-    return model
+
+#print(model_fp32)
+
+model_fp32.load_state_dict(torch.load('best_custom_vit.pth'))
+
+model_fp32.eval()
+########################################################
+##to convert to onnx format
+dummy_input = torch.randn(1, 3, 32, 32)
+torch.onnx.export(
+    model_fp32,
+    dummy_input,
+    "custom_vit.onnx",
+    input_names=["input"],
+    output_names=["output"],
+    dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
+    opset_version=13,
+    verbose=True
+)
+###################################################
+print("✅ ONNX export completed")
 
 
-def deit_base_patch16_224(pretrained=False,
-                          quant=False,
-                          calibrate=False,
-                          cfg=None,
-                          **kwargs):
-    model = VisionTransformer(patch_size=16,
-                              embed_dim=768,
-                              depth=12,
-                              num_heads=12,
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(QIntLayerNorm, eps=1e-6),
-                              quant=quant,
-                              calibrate=calibrate,
-                              input_quant=True,
-                              cfg=cfg,
-                              **kwargs)
-    if pretrained:
-        checkpoint = torch.hub.load_state_dict_from_url(
-            url=
-            'https://dl.fbaipublicfiles.com/deit/deit_base_patch16_224-b5f2ef4d.pth',
-            map_location='cpu',
-            check_hash=True)
-        model.load_state_dict(checkpoint['model'], strict=False)
-    return model
-
-
-def vit_base_patch16_224(pretrained=False,
-                         quant=False,
-                         calibrate=False,
-                         cfg=None,
-                         **kwargs):
-    model = VisionTransformer(patch_size=16,
-                              embed_dim=768,
-                              depth=12,
-                              num_heads=12,
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(QIntLayerNorm, eps=1e-6),
-                              quant=quant,
-                              calibrate=calibrate,
-                              input_quant=False,
-                              cfg=cfg,
-                              **kwargs)
-    if pretrained:
-        url = 'https://storage.googleapis.com/vit_models/augreg/' + \
-            'B_16-i21k-300ep-lr_0.001-aug_medium1-wd_0.1-do_0.0-sd_0.0--imagenet2012-steps_20k-lr_0.01-res_224.npz'
-
-        load_weights_from_npz(model, url, check_hash=True)
-    return model
-
-
-def vit_large_patch16_224(pretrained=False,
-                          quant=False,
-                          calibrate=False,
-                          cfg=None,
-                          **kwargs):
-    model = VisionTransformer(patch_size=16,
-                              embed_dim=1024,
-                              depth=24,
-                              num_heads=16,
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(QIntLayerNorm, eps=1e-6),
-                              quant=quant,
-                              calibrate=calibrate,
-                              input_quant=False,
-                              cfg=cfg,
-                              **kwargs)
-    if pretrained:
-        url = 'https://storage.googleapis.com/vit_models/augreg/' + \
-            'L_16-i21k-300ep-lr_0.001-aug_medium1-wd_0.1-do_0.1-sd_0.1--imagenet2012-steps_20k-lr_0.01-res_224.npz'
-
-        load_weights_from_npz(model, url, check_hash=True)
-    return model

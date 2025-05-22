@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu May 15 09:48:35 2025
+
+@author: yanxia
+"""
+
 # Copyright (c) MEGVII Inc. and its affiliates. All Rights Reserved.
 import collections.abc
 import math
@@ -12,17 +20,51 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from .layers_quant import DropPath, HybridEmbed, Mlp, PatchEmbed, trunc_normal_
-from .ptq import QAct, QConv2d, QIntLayerNorm, QIntSoftmax, QLinear
-from .utils import load_weights_from_npz
+from models.layers_quant import DropPath, HybridEmbed, Mlp, PatchEmbed, trunc_normal_
+from models.ptq import QAct, QConv2d, QIntLayerNorm, QIntSoftmax, QLinear
+from models.utils import load_weights_from_npz
 
+from config import Config
 
-__all__ = [
-    'vit_custom_16_224','vit_custom_4_32','deit_tiny_patch16_224', 'deit_small_patch16_224', 'deit_base_patch16_224',
-    'vit_base_patch16_224', 'vit_large_patch16_224'
-]
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
+import torchvision
+import matplotlib.pyplot as plt
+import torch.optim as optim
+from tqdm import tqdm
+import copy
 
+from torchvision.datasets import ImageFolder
 
+## CIFAR10
+transform = transforms.Compose([
+    transforms.Resize((32, 32)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+])
+train_dataset = torchvision.datasets.CIFAR10(root='/home/yanxia/Downloads/20250505/data/', train=True, download=True, transform=transform)
+test_dataset = torchvision.datasets.CIFAR10(root='/home/yanxia/Downloads/20250505/data/', train=False, download=True, transform=transform)
+
+## ImageNet 1k
+# --- Data Preparation ---
+# transform = transforms.Compose([
+#     transforms.Resize((224, 224)),
+#     transforms.ToTensor(),
+#     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+# ])
+# train_dir='/home/yanxia/Downloads/ILSVRC2012/train/'
+# test_dir='/home/yanxia/Downloads/ILSVRC2012/val/'
+# train_dataset = ImageFolder(train_dir, transform=transform)
+# test_dataset= ImageFolder(test_dir, transform=transform)
+###############################################################
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=2)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=2)
+
+# --- Model, Loss, Optimizer ---
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#print(device) #cuda
+
+######################## definition of transformer structures ##################
 class Attention(nn.Module):
 
     def __init__(self,
@@ -356,7 +398,6 @@ class VisionTransformer(nn.Module):
         for m in self.modules():
             if type(m) in [QConv2d, QLinear, QAct, QIntSoftmax]:
                 m.quant = True
-                #m.quant = False  # only quantize LayerNorm 84.388
             if self.cfg.INT_NORM:
                 if type(m) in [QIntLayerNorm]:
                     m.mode = 'int'
@@ -415,187 +456,144 @@ class VisionTransformer(nn.Module):
         x = self.act_out(x)
         return x
 
-###################
-def vit_custom_16_224(pretrained=False,
-                         quant=False,
-                         calibrate=False,
-                         cfg=None,
-                         **kwargs):
-    model = VisionTransformer(patch_size=16,
-                              embed_dim=768,
-                              depth=1,
-                              num_heads=12,
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(QIntLayerNorm, eps=1e-6),
-                              quant=quant,
-                              calibrate=calibrate,
-                              input_quant=False,
-                              cfg=cfg,
-                              **kwargs)
-    if pretrained:
-        model.load_state_dict(torch.load("/home/yanxia/Downloads/FQ_ViT_experiment/best_custom_vit_16_224.pth"))
-    return model
 
-def vit_custom_4_32(pretrained=False,
-                         quant=False,
-                         calibrate=False,
-                         cfg=None,
-                         **kwargs):
-    model = VisionTransformer(
-            img_size=32,
-            patch_size=4,
-            num_classes=10,
-            #embed_dim=128,
-            embed_dim=192,
-            
-            depth=6,
-            
-            num_heads=2,
-            mlp_ratio=2,
-            qkv_bias=True,
-            norm_layer=partial(QIntLayerNorm, eps=1e-6),
-            quant=quant,
-            calibrate=calibrate,
-            input_quant=False,
-            cfg= cfg,
-            **kwargs)
-    
-    if pretrained:
-        #model.load_state_dict(torch.load("/home/yanxia/Downloads/FQ_ViT_experiment/best_custom_vit.pth"))
-        model.load_state_dict(torch.load("/home/yanxia/Downloads/FQ_ViT_experiment/best_custom_vit_6layers.pth"))
-    return model
-
-####################
-def deit_tiny_patch16_224(pretrained=False,
-                          quant=False,
-                          calibrate=False,
-                          cfg=None,
-                          **kwargs):
-    model = VisionTransformer(
-        patch_size=16,
+model = VisionTransformer(
+        img_size=32,
+        patch_size=4,
+        num_classes=10,
+        #embed_dim=128,
         embed_dim=192,
-        depth=12,
-        num_heads=3,
-        mlp_ratio=4,
+        depth=6,
+        num_heads=2,
+        mlp_ratio=2,
         qkv_bias=True,
         norm_layer=partial(QIntLayerNorm, eps=1e-6),
-        quant=quant,
-        calibrate=calibrate,
-        input_quant=True,
-        cfg=cfg,
-        **kwargs,
-    )
-    if pretrained:
-        checkpoint = torch.hub.load_state_dict_from_url(
-            url=
-            'https://dl.fbaipublicfiles.com/deit/deit_tiny_patch16_224-a1311bcf.pth',
-            map_location='cpu',
-            check_hash=True,
-        )
-        model.load_state_dict(checkpoint['model'], strict=False)
-    return model
+        quant=False,
+        calibrate=False,
+        input_quant=False,
+        cfg= Config( ptf=False, lis=False)
+    ).to(device)
+# model = VisionTransformer(
+#         patch_size=16,
+#         embed_dim=768,
+#         depth=12,
+#         num_heads=12,
+#         mlp_ratio=4,
+#         qkv_bias=True,
+#         norm_layer=partial(QIntLayerNorm, eps=1e-6),
+#         quant=False,
+#         calibrate=False,
+#         input_quant=False,
+#         cfg= Config( ptf=False, lis=False)
+#     ).to(device)
+# print(model)
 
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=3e-4)
 
-def deit_small_patch16_224(pretrained=False,
-                           quant=False,
-                           calibrate=False,
-                           cfg=None,
-                           **kwargs):
-    model = VisionTransformer(patch_size=16,
-                              embed_dim=384,
-                              depth=12,
-                              num_heads=6,
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(QIntLayerNorm, eps=1e-6),
-                              quant=quant,
-                              calibrate=calibrate,
-                              input_quant=True,
-                              cfg=cfg,
-                              **kwargs)
-    if pretrained:
-        checkpoint = torch.hub.load_state_dict_from_url(
-            url=
-            'https://dl.fbaipublicfiles.com/deit/deit_small_patch16_224-cd65a155.pth',
-            map_location='cpu',
-            check_hash=True)
-        model.load_state_dict(checkpoint['model'], strict=False)
-    return model
+# --- Training Loop ---
+def train_one_epoch(model, loader, criterion, optimizer, device):
+    model.train()
+    total_loss = 0
+    correct = 0
+    total = 0
+    for images, labels in tqdm(loader, desc="Training", leave=False):
+        images, labels = images.to(device), labels.to(device)
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
 
+        total_loss += loss.item()
+        _, preds = outputs.max(1)
+        correct += preds.eq(labels).sum().item()
+        total += labels.size(0)
+    return total_loss / len(loader), correct / total
 
-def deit_base_patch16_224(pretrained=False,
-                          quant=False,
-                          calibrate=False,
-                          cfg=None,
-                          **kwargs):
-    model = VisionTransformer(patch_size=16,
-                              embed_dim=768,
-                              depth=12,
-                              num_heads=12,
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(QIntLayerNorm, eps=1e-6),
-                              quant=quant,
-                              calibrate=calibrate,
-                              input_quant=True,
-                              cfg=cfg,
-                              **kwargs)
-    if pretrained:
-        checkpoint = torch.hub.load_state_dict_from_url(
-            url=
-            'https://dl.fbaipublicfiles.com/deit/deit_base_patch16_224-b5f2ef4d.pth',
-            map_location='cpu',
-            check_hash=True)
-        model.load_state_dict(checkpoint['model'], strict=False)
-    return model
+# --- Evaluation ---
+def evaluate(model, loader, criterion, device):
+    model.eval()
+    total_loss = 0
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for images, labels in tqdm(loader, desc="Evaluating", leave=False):
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            loss = criterion(outputs, labels)
 
+            total_loss += loss.item()
+            _, preds = outputs.max(1)
+            correct += preds.eq(labels).sum().item()
+            total += labels.size(0)
+    return total_loss / len(loader), correct / total
 
-def vit_base_patch16_224(pretrained=False,
-                         quant=False,
-                         calibrate=False,
-                         cfg=None,
-                         **kwargs):
-    model = VisionTransformer(patch_size=16,
-                              embed_dim=768,
-                              depth=12,
-                              num_heads=12,
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(QIntLayerNorm, eps=1e-6),
-                              quant=quant,
-                              calibrate=calibrate,
-                              input_quant=False,
-                              cfg=cfg,
-                              **kwargs)
-    if pretrained:
-        url = 'https://storage.googleapis.com/vit_models/augreg/' + \
-            'B_16-i21k-300ep-lr_0.001-aug_medium1-wd_0.1-do_0.0-sd_0.0--imagenet2012-steps_20k-lr_0.01-res_224.npz'
+#--- Training Loop with Early Stopping ---
+epochs = 40
+patience = 5
+best_val_loss = float('inf')
+epochs_no_improve = 0
+best_model_state = None
 
-        load_weights_from_npz(model, url, check_hash=True)
-    return model
+train_losses, val_losses = [], []
+train_accuracies, val_accuracies = [], []
 
+for epoch in range(epochs):
+    train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device)
+    val_loss, val_acc = evaluate(model, test_loader, criterion, device)
 
-def vit_large_patch16_224(pretrained=False,
-                          quant=False,
-                          calibrate=False,
-                          cfg=None,
-                          **kwargs):
-    model = VisionTransformer(patch_size=16,
-                              embed_dim=1024,
-                              depth=24,
-                              num_heads=16,
-                              mlp_ratio=4,
-                              qkv_bias=True,
-                              norm_layer=partial(QIntLayerNorm, eps=1e-6),
-                              quant=quant,
-                              calibrate=calibrate,
-                              input_quant=False,
-                              cfg=cfg,
-                              **kwargs)
-    if pretrained:
-        url = 'https://storage.googleapis.com/vit_models/augreg/' + \
-            'L_16-i21k-300ep-lr_0.001-aug_medium1-wd_0.1-do_0.1-sd_0.1--imagenet2012-steps_20k-lr_0.01-res_224.npz'
+    train_losses.append(train_loss)
+    val_losses.append(val_loss)
+    train_accuracies.append(train_acc)
+    val_accuracies.append(val_acc)
 
-        load_weights_from_npz(model, url, check_hash=True)
-    return model
+    print(f"Epoch {epoch+1}/{epochs} | Train Loss: {train_loss:.4f} Acc: {train_acc:.4f} | "
+          f"Val Loss: {val_loss:.4f} Acc: {val_acc:.4f}")
+
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        #best_model_state = model.state_dict() # only reference, will change
+        best_model_state = copy.deepcopy(model.state_dict())
+        print(f'This is epoch {epoch+1}.')
+        torch.save(best_model_state, "best_custom_vit_4_32.pth") 
+        epochs_no_improve = 0
+    else:
+        epochs_no_improve += 1
+        if epochs_no_improve >= patience:
+            print(f"Early stopping at epoch {epoch+1}")
+            break
+
+# --- Restore Best Model ---
+# if best_model_state:
+#     model.load_state_dict(best_model_state)
+###########################
+
+#--- Plot Loss and Accuracy ---
+# plt.figure(figsize=(12, 5))
+
+# plt.subplot(1, 2, 1)
+# plt.plot(train_losses, label='Train Loss')
+# plt.plot(val_losses, label='Val Loss')
+# plt.title('Loss over Epochs')
+# plt.xlabel('Epoch')
+# plt.ylabel('Loss')
+# plt.legend()
+
+# plt.subplot(1, 2, 2)
+# plt.plot(train_accuracies, label='Train Acc')
+# plt.plot(val_accuracies, label='Val Acc')
+# plt.title('Accuracy over Epochs')
+# plt.xlabel('Epoch')
+# plt.ylabel('Accuracy')
+# plt.legend()
+
+# plt.tight_layout()
+# plt.show()
+
+# --- Load and Evaluate Best Model ---
+model.load_state_dict(torch.load("best_custom_vit_4_32.pth"))
+model.eval()
+model.to(device)
+final_val_loss, final_val_acc = evaluate(model, test_loader, criterion, device)
+print(f"\n✅ Best Model | Val Loss: {final_val_loss:.4f} | Val Acc: {final_val_acc:.4f}")

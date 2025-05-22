@@ -155,6 +155,7 @@ class QIntLayerNorm(nn.LayerNorm):
                                             elementwise_affine)
         assert isinstance(normalized_shape, int)
         self.mode = 'ln'
+        #self.mode = 'int'
 
     def get_MN(self, x):
         bit = 8
@@ -200,6 +201,9 @@ class QIntLayerNorm(nn.LayerNorm):
                  torch.pow(2, N)).round()
 
             x_q = ((A_sign * M * x_q + B) / torch.pow(2, N)).round()
+            # int8
+            x_q = x_q.clamp(-128, 127).to(torch.int8)
+            # dequantize
             x = x_q * out_scale
         else:
             raise NotImplementedError

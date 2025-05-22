@@ -1,0 +1,114 @@
+Model: vit_custom_4_32
+VisionTransformer(
+  (patch_embed): PatchEmbed(
+    (proj): QConv2d(
+      3, 128, kernel_size=(4, 4), stride=(4, 4)
+      (quantizer): UniformQuantizer()
+    )
+    (qact_before_norm): Identity()
+    (norm): Identity()
+    (qact): QAct(
+      (quantizer): UniformQuantizer()
+    )
+  )
+  (pos_drop): Dropout(p=0.0, inplace=False)
+  (qact_embed): QAct(
+    (quantizer): UniformQuantizer()
+  )
+  (qact_pos): QAct(
+    (quantizer): UniformQuantizer()
+  )
+  (qact1): QAct(
+    (quantizer): UniformQuantizer()
+  )
+  (blocks): ModuleList(
+    (0): Block(
+      (norm1): QIntLayerNorm((128,), eps=1e-06, elementwise_affine=True)
+      (qact1): QAct(
+        (quantizer): UniformQuantizer()
+      )
+      (attn): Attention(
+        (qkv): QLinear(
+          in_features=128, out_features=384, bias=True
+          (quantizer): UniformQuantizer()
+        )
+        (qact1): QAct(
+          (quantizer): UniformQuantizer()
+        )
+        (qact2): QAct(
+          (quantizer): UniformQuantizer()
+        )
+        (proj): QLinear(
+          in_features=128, out_features=128, bias=True
+          (quantizer): UniformQuantizer()
+        )
+        (qact3): QAct(
+          (quantizer): UniformQuantizer()
+        )
+        (qact_attn1): QAct(
+          (quantizer): UniformQuantizer()
+        )
+        (attn_drop): Dropout(p=0.0, inplace=False)
+        (proj_drop): Dropout(p=0.0, inplace=False)
+        (log_int_softmax): QIntSoftmax(
+          (quantizer): Log2Quantizer()
+        )
+      )
+      (drop_path): Identity()
+      (qact2): QAct(
+        (quantizer): UniformQuantizer()
+      )
+      (norm2): QIntLayerNorm((128,), eps=1e-06, elementwise_affine=True)
+      (qact3): QAct(
+        (quantizer): UniformQuantizer()
+      )
+      (mlp): Mlp(
+        (fc1): QLinear(
+          in_features=128, out_features=256, bias=True
+          (quantizer): UniformQuantizer()
+        )
+        (act): GELU(approximate='none')
+        (qact1): QAct(
+          (quantizer): UniformQuantizer()
+        )
+        (fc2): QLinear(
+          in_features=256, out_features=128, bias=True
+          (quantizer): UniformQuantizer()
+        )
+        (qact2): QAct(
+          (quantizer): UniformQuantizer()
+        )
+        (drop): Dropout(p=0.0, inplace=False)
+      )
+      (qact4): QAct(
+        (quantizer): UniformQuantizer()
+      )
+    )
+  )
+  (norm): QIntLayerNorm((128,), eps=1e-06, elementwise_affine=True)
+  (qact2): QAct(
+    (quantizer): UniformQuantizer()
+  )
+  (pre_logits): Identity()
+  (head): QLinear(
+    in_features=128, out_features=10, bias=True
+    (quantizer): UniformQuantizer()
+  )
+  (act_out): QAct(
+    (quantizer): UniformQuantizer()
+  )
+)
+vit
+Calibrating...
+Validating...
+Test: [0/100]	Time 0.431 (0.431)	Loss 1.0704 (1.0704)	Prec@1 58.000 (58.000)	Prec@5 97.000 (97.000)
+Test: [10/100]	Time 0.005 (0.047)	Loss 1.1001 (1.2349)	Prec@1 65.000 (56.364)	Prec@5 95.000 (94.455)
+Test: [20/100]	Time 0.007 (0.028)	Loss 1.2005 (1.2605)	Prec@1 56.000 (54.095)	Prec@5 94.000 (94.143)
+Test: [30/100]	Time 0.009 (0.022)	Loss 1.3631 (1.2806)	Prec@1 49.000 (54.032)	Prec@5 95.000 (94.161)
+Test: [40/100]	Time 0.006 (0.018)	Loss 1.2438 (1.2858)	Prec@1 54.000 (54.122)	Prec@5 95.000 (94.171)
+Test: [50/100]	Time 0.007 (0.016)	Loss 1.3697 (1.2903)	Prec@1 54.000 (53.863)	Prec@5 93.000 (94.176)
+Test: [60/100]	Time 0.007 (0.015)	Loss 1.3247 (1.2950)	Prec@1 47.000 (53.574)	Prec@5 99.000 (94.279)
+Test: [70/100]	Time 0.010 (0.014)	Loss 1.1438 (1.3001)	Prec@1 61.000 (53.268)	Prec@5 95.000 (94.211)
+Test: [80/100]	Time 0.005 (0.013)	Loss 1.3463 (1.2894)	Prec@1 55.000 (53.383)	Prec@5 90.000 (94.321)
+Test: [90/100]	Time 0.005 (0.012)	Loss 1.3263 (1.2966)	Prec@1 49.000 (53.110)	Prec@5 94.000 (94.209)
+ * Prec@1 53.160 Prec@5 94.280 Time 1.194
